@@ -1,0 +1,3 @@
+[submodule "external/bioshell4"]
+	path = external/bioshell4
+	url = https://github.com/dgront/BioShell
