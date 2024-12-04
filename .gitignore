@@ -1,7 +1,6 @@
 pkg/
 target/
 venv-maturin/
-external/bioshell4/
 .idea/
 Cargo.lock
 *.pdb
