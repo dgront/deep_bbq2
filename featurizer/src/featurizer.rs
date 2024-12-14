@@ -7,10 +7,16 @@ use bioshell_pdb::{Structure, Deposit, code_and_chain, find_cif_file_name, find_
 use bioshell_seq::chemical::{MonomerType, StandardResidueType};
 use log::{debug, info, warn};
 
+const SHORT_HELP: &str = "\n\nCommand line application to create input data for training deep_bbq v.2 model\n\n
+Say featurizer -h to see options or featurizer --help for a longer description of the program";
+
+const LONG_AFTER_HELP: &str = "\x1b[4mExamples:\x1b[0m
+1. To featurize a single .cif or .pdb file:
+\tfeaturizer -i tests/input_files/2gb1.cif -c A\n\n\
+";
+
 #[derive(Parser, Debug)]
-#[clap(author, version, about, long_about = None)]
-/// Command line application to create input data for training deep_bbq v.2 model
-/// say featurizer -h to see options
+#[clap(author, version, about = SHORT_HELP, long_about = None, after_long_help = LONG_AFTER_HELP)]
 struct Args {
     /// a single CIF or PDB file to process
     #[clap(short, long,  short='i')]
@@ -34,6 +40,7 @@ fn find_deposit_files(list_file: &str, path: &str) -> Vec<(String, Option<String
     let mut input_files: Vec<(String, Option<String>)> = Vec::new();
     for line in lines {
         if line.len() < 1 { continue; }
+        if line[0].len() < 1 || line[0].starts_with("#") { continue; }
         let (pdb_code, chain_id) = code_and_chain(&line[0]);
         if let Ok(cif_fname) = find_cif_file_name(&pdb_code, path) {
             input_files.push((cif_fname, chain_id));
@@ -58,7 +65,9 @@ fn process_deposit(fname: &str, chain: &str) -> Result<(), PDBError> {
     let strctr = Structure::from_iterator(&strctr.id_code, strctr.atoms().iter().filter(|a| a.chain_id == chain));
     let entity_id = &strctr.atoms()[0].entity_id;
     let entity = deposit.entity(entity_id);
+    // ResidueType objects for all residues in the entity; some of them are gaps
     let entity_resids = entity.chain_monomers(chain)?;
+    // ResidueIDs for all residues in the chain; it may have fewer residues than in the entity (because of gaps)
     let chain_resids = strctr.residue_ids();
     let mut i_res_idx = 0;
     let hbonds = BackboneHBondMap::new(&strctr);
@@ -71,10 +80,10 @@ fn process_deposit(fname: &str, chain: &str) -> Result<(), PDBError> {
         if let Ok(ca) = strctr.atom(i_res, " CA ") {
             print!("{:4} {} {} : {:8.3} {:8.3} {:8.3}", i_res_idx, res, i_res, ca.pos.x, ca.pos.y, ca.pos.z);
             for (j_res_idx, j_res) in chain_resids.iter().enumerate() {
-                if let Some(hb) = hbonds.get_h_bond(i_res, j_res) {
+                if let Some(hb) = hbonds.h_bond(i_res, j_res) {
                     print!(" {:4} {:.3}", j_res_idx, hb.dssp_energy());
                 }
-                if let Some(hb) = hbonds.get_h_bond(j_res, i_res) {
+                if let Some(hb) = hbonds.h_bond(j_res, i_res) {
                     print!(" {:4} {:.3}", j_res_idx, hb.dssp_energy());
                 }
             }
@@ -108,6 +117,8 @@ fn main() -> Result<(), PDBError> {
     for (fname, chain) in input_files {
         if let Some(chain) = chain {
             process_deposit(&fname, &chain)?;
+        } else {
+            warn!("Can't find a chain ID for the following file: {}\nuse -c option together with -i or provide the chain code together with PDB id in the list file", fname);
         }
     }
 
