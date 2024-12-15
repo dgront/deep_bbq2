@@ -6,6 +6,7 @@ use bioshell_io::{open_file, out_writer, read_whitespace_delimited_values};
 use clap::{Parser};
 
 use bioshell_pdb::{Structure, Deposit, code_and_chain, find_cif_file_name, find_pdb_file_name, PDBError};
+use bioshell_pdb::PDBError::NoSuchChain;
 use bioshell_seq::chemical::{MonomerType, StandardResidueType};
 use log::{debug, error, info, warn};
 
@@ -65,6 +66,9 @@ fn process_deposit(fname: &str, chain: &str, out_fname: &str) -> Result<(), PDBE
     let mut strctr = deposit.structure();
     strctr.remove_ligands();
     let strctr = Structure::from_iterator(&strctr.id_code, strctr.atoms().iter().filter(|a| a.chain_id == chain));
+    if strctr.atoms().len() < 1 {
+        return Err(NoSuchChain { chain_id: chain.to_string() });
+    }
     let entity_id = &strctr.atoms()[0].entity_id;
     let entity = deposit.entity(entity_id);
     // ResidueType objects for all residues in the entity; some of them are gaps
@@ -123,9 +127,8 @@ fn main() -> Result<(), PDBError> {
 
     for (fname, chain) in input_files {
         if let Some(chain) = chain {
-            let path = Path::new(&fname);
-            let out_fname = path.file_stem().unwrap().to_str().unwrap();
-            let out_fname = format!("{}.dat", out_fname);
+            let file_root = Path::new(&fname).file_name().unwrap().to_str().unwrap().split(".").next().unwrap();
+            let out_fname = format!("{}_{}.dat", file_root, chain);
             if let Err(error) = process_deposit(&fname, &chain, &out_fname) {
                 error!("Can't process {}; reason: {}", fname, error);
                 if let Err(err) = fs::remove_file(&out_fname) { error!("Can't remove the output file: {}", err); }
