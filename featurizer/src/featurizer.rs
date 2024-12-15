@@ -84,7 +84,8 @@ fn process_deposit(fname: &str, chain: &str, out_fname: &str) -> Result<(), PDBE
         }
         let i_res = &chain_resids[i_res_idx];
         if let Ok(ca) = strctr.atom(i_res, " CA ") {
-            write!(outfile, "{:4} {} {} : {:8.3} {:8.3} {:8.3}", i_res_idx, res, i_res, ca.pos.x, ca.pos.y, ca.pos.z)?;
+            let ss_code = strctr.residue_secondary(&i_res)?.hec_code();
+            write!(outfile, "{:4} {:7} {} : {} {:8.3} {:8.3} {:8.3}", i_res_idx, res, i_res, ss_code as char, ca.pos.x, ca.pos.y, ca.pos.z)?;
             for (j_res_idx, j_res) in chain_resids.iter().enumerate() {
                 if let Some(hb) = hbonds.h_bond(i_res, j_res) {
                     write!(outfile, " {:4} {:.3}", j_res_idx, hb.dssp_energy())?;
