@@ -1,11 +1,13 @@
-use std::env;
+use std::{env, fs};
+use std::fmt::format;
+use std::path::Path;
 use bioshell_interactions::BackboneHBondMap;
-use bioshell_io::{open_file, read_whitespace_delimited_values};
+use bioshell_io::{open_file, out_writer, read_whitespace_delimited_values};
 use clap::{Parser};
 
 use bioshell_pdb::{Structure, Deposit, code_and_chain, find_cif_file_name, find_pdb_file_name, PDBError};
 use bioshell_seq::chemical::{MonomerType, StandardResidueType};
-use log::{debug, info, warn};
+use log::{debug, error, info, warn};
 
 const SHORT_HELP: &str = "\n\nCommand line application to create input data for training deep_bbq v.2 model\n\n
 Say featurizer -h to see options or featurizer --help for a longer description of the program";
@@ -57,7 +59,7 @@ fn find_deposit_files(list_file: &str, path: &str) -> Vec<(String, Option<String
     return input_files;
 }
 
-fn process_deposit(fname: &str, chain: &str) -> Result<(), PDBError> {
+fn process_deposit(fname: &str, chain: &str, out_fname: &str) -> Result<(), PDBError> {
 
     let deposit = Deposit::from_file(fname)?;
     let mut strctr = deposit.structure();
@@ -71,23 +73,27 @@ fn process_deposit(fname: &str, chain: &str) -> Result<(), PDBError> {
     let chain_resids = strctr.residue_ids();
     let mut i_res_idx = 0;
     let hbonds = BackboneHBondMap::new(&strctr);
+    let mut outfile = out_writer(out_fname, false);
     for res in entity_resids {
         if res.parent_type==StandardResidueType::GAP {
-            println!("{:^4} {}", '-', res);
+            writeln!(outfile, "{:^4} {}", '-', res)?;
             continue;
+        }
+        if i_res_idx >= chain_resids.len() {
+            return Err(PDBError::ResidueNotDefined { residue_index: i_res_idx});
         }
         let i_res = &chain_resids[i_res_idx];
         if let Ok(ca) = strctr.atom(i_res, " CA ") {
-            print!("{:4} {} {} : {:8.3} {:8.3} {:8.3}", i_res_idx, res, i_res, ca.pos.x, ca.pos.y, ca.pos.z);
+            write!(outfile, "{:4} {} {} : {:8.3} {:8.3} {:8.3}", i_res_idx, res, i_res, ca.pos.x, ca.pos.y, ca.pos.z)?;
             for (j_res_idx, j_res) in chain_resids.iter().enumerate() {
                 if let Some(hb) = hbonds.h_bond(i_res, j_res) {
-                    print!(" {:4} {:.3}", j_res_idx, hb.dssp_energy());
+                    write!(outfile, " {:4} {:.3}", j_res_idx, hb.dssp_energy())?;
                 }
                 if let Some(hb) = hbonds.h_bond(j_res, i_res) {
-                    print!(" {:4} {:.3}", j_res_idx, hb.dssp_energy());
+                    write!(outfile, " {:4} {:.3}", j_res_idx, hb.dssp_energy())?;
                 }
             }
-            println!();
+            writeln!(outfile, "")?;
         } else {
             warn!("CA atom missing for residue: {}", i_res);
         }
@@ -116,7 +122,14 @@ fn main() -> Result<(), PDBError> {
 
     for (fname, chain) in input_files {
         if let Some(chain) = chain {
-            process_deposit(&fname, &chain)?;
+            let path = Path::new(&fname);
+            let out_fname = path.file_stem().unwrap().to_str().unwrap();
+            let out_fname = format!("{}.dat", out_fname);
+            if let Err(error) = process_deposit(&fname, &chain, &out_fname) {
+                error!("Can't process {}; reason: {}", fname, error);
+                if let Err(err) = fs::remove_file(&out_fname) { error!("Can't remove the output file: {}", err); }
+                else { warn!("Removed the incomplete output file: {}", &out_fname); }
+            }
         } else {
             warn!("Can't find a chain ID for the following file: {}\nuse -c option together with -i or provide the chain code together with PDB id in the list file", fname);
         }
