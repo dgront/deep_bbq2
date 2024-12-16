@@ -110,7 +110,9 @@ fn process_deposit(fname: &str, chain: &str, out_fname: &str) -> Result<(), PDBE
 
 fn main() -> Result<(), PDBError> {
 
-    if env::var("RUST_LOG").is_err() { env::set_var("RUST_LOG", "info") }
+    unsafe {
+        if env::var("RUST_LOG").is_err() { env::set_var("RUST_LOG", "info") }
+    }
     env_logger::init();
 
     let args = Args::parse();
